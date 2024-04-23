@@ -5,7 +5,7 @@ def read_file(file_path: str):
     with open(file_path, 'r') as f:
         return f.readlines() if f != None else None
 
-file = read_file('../data/example.sql')
+file = read_file('../data/example_reduced.sql')
 interpreter = Interpreter(file)
 # sql_by_terms = interpreter.separate_sql_by_terms()
 
@@ -16,6 +16,8 @@ interpreter = Interpreter(file)
 # tables = interpreter.attribute_tables()
 
 sql_by_expressions = interpreter.separate_sql_by_expressions()
+interpreter.attribute_tables()
+
 # for exp in sql_by_expressions:
 #     print(exp)
 #     print("=-=-=-=-=-=-=-=-=-")
