@@ -1,0 +1,1 @@
+SELECT nome from Categoria;

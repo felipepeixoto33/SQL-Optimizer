@@ -4,6 +4,7 @@ from enum import Enum
 class Interpreter:
     def __init__(self, sql) -> None:
         self.sql = sql
+        self.raw_sql = self.sql_to_string()
         self.common_operators = ['CREATE', 'IF', 'INT', 'NOT', 'NULL', 'EXISTS']
         # Colocar todos os operadores do SQL nesse array acima.
         self.tables = {}
@@ -87,16 +88,60 @@ class Interpreter:
                 self.create_table_parameter(table_title, var_name)
 
     def create_table(self, table_title):
-        print("TABLE_TITLE:", table_title)
+        # print("TABLE_TITLE:", table_title)
         self.tables[table_title] = {}
-        print(self.tables)
+        # print(self.tables)
     
     def create_table_parameter(self, table_title, var_name):
         self.tables[table_title][var_name] = None
-        print(self.tables[table_title]) 
+        # print(self.tables[table_title]) 
 
     def attribute_parameters(self):
         pass
     
+    def validade_syntax(self):
+        # Dicionário para armazenar as partes do SQL
+        components = {
+            'SELECT': None,
+            'FROM': None,
+            'JOIN': [],
+            'WHERE': None
+        }
+
+        # Função auxiliar para extrair com segurança usando regex
+        def safe_search(pattern, text):
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1)
+            return False
+
+        # Extrair SELECT
+        components['SELECT'] = safe_search(r'SELECT\s+([\w\s\*,]+)\s+', self.raw_sql)
+        if not components['SELECT']:
+            return False, "Error parsing SELECT"
+
+        # Extrair FROM
+        components['FROM'] = safe_search(r'FROM\s+([\w\s]+?)(?:\s+WHERE|\s+JOIN|;|$)', self.raw_sql)
+        if not components['FROM']:
+            return False, "Error parsing FROM"
+
+        # Extrair WHERE, se existir
+        components['WHERE'] = safe_search(r'WHERE\s+(.*?)(?:\s+JOIN|;|$)', self.raw_sql)
+
+        # Extrair JOINs
+        joins = re.finditer(r'JOIN\s+([\w\s]+)\s+ON\s+([\w\s\.\=\>\<\!\(\)]+)', self.raw_sql, re.IGNORECASE)
+        for join in joins:
+            components['JOIN'].append((join.group(1).strip(), join.group(2).strip()))
+
+        # Retorna true e os componentes se tudo estiver correto
+        return True, components
+
+
     def validate_expression(self):
-        return self.check_parenthesis()
+        return self.check_parenthesis() and self.validade_syntax()
+    
+    def sql_to_string(self):
+        str = ""
+        for line in self.sql:
+            str += line
+        return str
