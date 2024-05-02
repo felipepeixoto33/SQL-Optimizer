@@ -1,6 +1,7 @@
 import re
 import networkx as nx
 import plotly.graph_objects as go
+from interpreter import Interpreter
 
 
 def parse_sql(query):
@@ -109,7 +110,7 @@ def plot_graph(G):
 sql_query = """
 SELECT name, age FROM users
 JOIN roles ON users.role_id = roles.id
-WHERE age > 25 AND (name = 'John' OR name = 'Jane');
+WHERE age > 25 AND  name = 'John';
 """
 
 result, parsed_sql_or_error = parse_sql(sql_query)
@@ -119,3 +120,7 @@ if result:
     plot_graph(G)
 else:
     print("Parsing failed:", parsed_sql_or_error)
+
+interpreter = Interpreter(sql_query)
+algebra = interpreter.sql_to_algebra()
+print(algebra)

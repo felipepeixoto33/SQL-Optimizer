@@ -1,5 +1,4 @@
 from interpreter import Interpreter
-from builder import Builder
 
 
 def read_file(file_path: str):
@@ -8,7 +7,6 @@ def read_file(file_path: str):
 
 file = read_file('../data/declaration.sql')
 interpreter = Interpreter(file)
-builder = Builder(interpreter.sql)
 
 # sql_by_terms = interpreter.separate_sql_by_terms()
 
@@ -23,11 +21,19 @@ interpreter.attribute_tables()
 
 validation = interpreter.validade_syntax()
 print(validation)
-vertices = builder.get_num_vertices()
-print(vertices)
 
 # for exp in sql_by_expressions:
 #     print(exp)
 #     print("=-=-=-=-=-=-=-=-=-")
 #     print("=-=-=-=-=-=-=-=-=-")
 #     print("=-=-=-=-=-=-=-=-=-")
+
+sql_query = """
+SELECT name, age FROM users
+JOIN roles ON users.role_id = roles.id
+WHERE age > 25 AND  name = 'John';
+"""
+
+interpreter = Interpreter(sql_query)
+algebra = interpreter.sql_to_algebra(sql_query)
+print(algebra)

@@ -145,3 +145,38 @@ class Interpreter:
         for line in self.sql:
             str += line
         return str
+
+    def sql_to_algebra(self, sql_query):
+        # Extração dos componentes principais da consulta SQL
+        select_match = re.search(r'SELECT\s+([\w\s\*,]+)\s+FROM', sql_query, re.IGNORECASE)
+        from_match = re.search(r'FROM\s+(\w+)', sql_query, re.IGNORECASE)
+        where_match = re.search(r'WHERE\s+([^;]+)', sql_query, re.IGNORECASE)
+        join_match = re.search(r'JOIN\s+(\w+)\s+ON\s+([\w\.]+)\s*=\s*([\w\.]+)', sql_query, re.IGNORECASE)
+
+        # Montagem da álgebra relacional
+        if select_match and from_match:
+            projection_fields = select_match.group(1).replace(' ', '')
+            from_table = from_match.group(1)
+            relational_algebra = f'π_{projection_fields} ('
+
+            if where_match:
+                conditions = where_match.group(1)
+                relational_algebra += f'σ_{conditions} ('
+
+            if join_match:
+                join_table = join_match.group(1)
+                join_condition = f"{join_match.group(2)} = {join_match.group(3)}"
+                relational_algebra += f'{from_table} ⨝_{join_condition} {join_table}'
+            else:
+                relational_algebra += from_table
+
+            relational_algebra += ')'
+            if where_match:
+                relational_algebra += ')'
+
+            return relational_algebra
+
+        return "Query structure not recognized"
+
+    def optimize_algebra(self, sql_as_algebra):
+        pass
