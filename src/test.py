@@ -89,8 +89,8 @@ print()
 
 def define_graph_flow(dicts):
     table_nodes = {}
-
-    graph_flow = {}
+    temp_flow = []
+    graph_flow = []
 
     for t in dicts['Tables']:
         table_nodes[t] = [t]
@@ -105,10 +105,15 @@ def define_graph_flow(dicts):
                 # print(t_n, c)
 
     for k, v in table_nodes.items():
-        print(f"#{k}:")
         for i in v:
-            print(i)
-        print()
+            node = Node('passo', i)
+            
+            if(len(temp_flow) > 0):
+                node.connect_to(temp_flow[-1])
+            
+            temp_flow.append(node)
+            graph_flow.append(node)
+        temp_flow = []
 
     for join in dicts['Joins']:
         tables = join['tables']
@@ -120,6 +125,7 @@ def define_graph_flow(dicts):
             if(t_in_node in tables):
                 join_tables.append(t_in_node)
         
-        
+        for node in graph_flow:
+            print(node.get_name(), node.get_expression(), node.connected_to)
 
 graph = define_graph_flow(result)

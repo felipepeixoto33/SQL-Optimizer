@@ -49,3 +49,29 @@ dados = {
 # Gerar o grafo
 grafo = montar_grafo(dados)
 print(grafo)
+
+
+"""
+
+{
+        'Node-1': ['π name, age', 'root'], 
+        'Node-2': ['⨝ users.role_id = roles.id', 1], 
+        'Node-3': ['π age, role_id, name', 2], 
+        'Node-4': ["σ age > 25 ^ name = 'John'", 3, 'users'], 
+        'Node-5': ['π id', 2, 'roles']
+}
+
+
+{
+    "Node-1":["Users", "Node-2"],
+    "Node-2":["σ age > 25 ^ "name = John", "Node-3"]
+    "Node-3":["π name, age, role_id", "Node-6"]
+    "Node-4":["roles", "Node-5"]
+    "Node-5":["π id", "Node-6"]
+    "Node-6":["⨝ users.role_id = roles.id", "Node-7"]
+    "Node-7":["π name, age", "root"] 
+}
+
+"""
+
+

@@ -1,10 +1,10 @@
 class Node():
-    def __init__(self, name: str, expression: str, connected_to: Node = Null):
+    def __init__(self, name: str, expression: str, connected_to = None):
         self.name = name
         self.expression = expression
         self.connected_to = connected_to
 
-    def connect_to(self, node: Node):
+    def connect_to(self, node):
         self.connected_to = node
 
     def get_expression(self):
