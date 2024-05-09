@@ -90,11 +90,8 @@ print()
 def define_graph_flow(dicts):
     table_nodes = {}
     temp_flow = []
-<<<<<<< HEAD
     step = 1
     tables_flow = {}
-=======
->>>>>>> bc937eae1bf4d6800896165023b3a106fad35f1e
     graph_flow = []
 
     for t in dicts['Tables']:
@@ -110,23 +107,15 @@ def define_graph_flow(dicts):
                 # print(t_n, c)
 
     for k, v in table_nodes.items():
-<<<<<<< HEAD
         tables_flow[k] = []
         for i in v:
             node = Node(f'passo {step}', i)
             step += 1
-=======
-        for i in v:
-            node = Node('passo', i)
->>>>>>> bc937eae1bf4d6800896165023b3a106fad35f1e
             
             if(len(temp_flow) > 0):
                 node.connect_to(temp_flow[-1])
             
-<<<<<<< HEAD
             tables_flow[k].append(node)
-=======
->>>>>>> bc937eae1bf4d6800896165023b3a106fad35f1e
             temp_flow.append(node)
             graph_flow.append(node)
         temp_flow = []
@@ -134,12 +123,9 @@ def define_graph_flow(dicts):
     for join in dicts['Joins']:
         tables = join['tables']
         expr = join['on']
-<<<<<<< HEAD
 
         node = Node(f'passo {step}', expression=expr)
         step += 1
-=======
->>>>>>> bc937eae1bf4d6800896165023b3a106fad35f1e
         
         join_tables = []
 
@@ -147,7 +133,6 @@ def define_graph_flow(dicts):
             if(t_in_node in tables):
                 join_tables.append(t_in_node)
         
-<<<<<<< HEAD
         for joined_t in join_tables:
             tables_flow[joined_t][-1].connect_to(node)
 
@@ -171,9 +156,4 @@ def define_graph_flow(dicts):
             print(node.get_name(), node.get_expression(), list([n.get_name()] for n in node.connected_nodes))
 
             
-=======
-        for node in graph_flow:
-            print(node.get_name(), node.get_expression(), node.connected_to)
-
->>>>>>> bc937eae1bf4d6800896165023b3a106fad35f1e
 graph = define_graph_flow(result)
