@@ -76,6 +76,6 @@ for d in dict:
     print(d, dict[d])
 
 "π_Nome,Age((π_Nome, Age, Role-ID(σ_age > 25, Nome='John'(users)))⨝_users.role_id = roles.id (π_ID(roles)))"
-print("Alg2", algebra_users.role-id = roles.id(Pi_id(roles)))"
+# print("Alg2", f"{algebra_users.role-id} = {roles.id(Pi_id(roles)))}")
 
 # Outras operações conforme necessário

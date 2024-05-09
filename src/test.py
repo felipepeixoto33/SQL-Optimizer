@@ -7,7 +7,7 @@ def analisar_sql(query):
         "Tables": [],
         "Joins": [],
         "Conditions": {},
-        "Projections": [],
+        "Projections": {},
         "Intermediary-Projections": {}
     }
 
@@ -15,7 +15,16 @@ def analisar_sql(query):
     proj_regex = re.compile(r'SELECT\s+(.*?)\s+FROM', re.IGNORECASE)
     match_proj = proj_regex.search(query)
     if match_proj:
-        elementos['Projections'] = [proj.strip() for proj in match_proj.group(1).split(',')]
+        # Extrai projeções e as associa a tabelas específicas
+        projections = match_proj.group(1).split(',')
+        for proj in projections:
+            proj = proj.strip()
+            table_column = re.match(r'(\w+)\.(\w+)', proj)
+            if table_column:
+                table, column = table_column.groups()
+                if table not in elementos['Projections']:
+                    elementos['Projections'][table] = []
+                elementos['Projections'][table].append(column)
 
     # Regex para extrair os nomes das tabelas principais e de junção
     table_regex = re.compile(r'FROM\s+(\w+)', re.IGNORECASE)
@@ -29,6 +38,8 @@ def analisar_sql(query):
         elementos['Tables'].append(main_table)
         elementos['Conditions'][main_table] = []
         elementos['Intermediary-Projections'][main_table] = set()
+        if main_table not in elementos['Projections']:
+            elementos['Projections'][main_table] = []
 
     # Regex para extrair as informações de JOIN (JOIN, ON)
     join_detail_regex = re.compile(r'JOIN\s+(\w+)\s+ON\s+(.*?)\s+(WHERE|JOIN|$)', re.IGNORECASE)
@@ -53,39 +64,30 @@ def analisar_sql(query):
     if match_cond:
         general_conditions = match_cond.group(1).split(' AND ')
         for condition in general_conditions:
+            condition = condition.strip(';')
             parts = re.findall(r'(\w+)\.(\w+)', condition)
             if parts:
                 for table, column in parts:
-                    elementos['Conditions'][table].append(condition.strip())
-                    elementos['Intermediary-Projections'][table].add(column)
-            else:
-                # Se não encontramos tabela explicitamente mencionada, assumimos a principal
-                column = re.search(r'(\w+)', condition).group(1)
-                elementos['Conditions'][main_table].append(condition.strip())
-                elementos['Intermediary-Projections'][main_table].add(column)
+                    if table in elementos['Tables']:
+                        elementos['Conditions'][table].append(condition)
+                        elementos['Intermediary-Projections'][table].add(column)
 
     # Convertendo sets para listas
     for table in elementos['Intermediary-Projections']:
         elementos['Intermediary-Projections'][table] = list(elementos['Intermediary-Projections'][table])
 
+    for k, v in elementos.items():
+        print(k, v)
+
+    print()
+    for table in elementos['Projections']:
+        for e in elementos['Projections'][table]:
+            table_int_projs = elementos['Intermediary-Projections'][table]
+            if(e not in table_int_projs):
+                table_int_projs.append(e)
+                
+
     return elementos
-
-# Exemplo de uso
-sql_query = "SELECT name, age FROM users JOIN roles ON users.role_id = roles.id WHERE age > 25 AND name = 'John';"
-result = analisar_sql(sql_query)
-print(result)
-print()
-
-
-"""
-{
-        'Tables': ['users', 'roles'], 
-        'Joins': [{'tables': ['users', 'roles'], 'on': 'users.role_id = roles.id'}], 
-        'Conditions': {'users': ['age > 25', "name = 'John';"], 'roles': []}, 
-        'Projections': ['name', 'age'], 
-        'Intermediary-Projections': {'users': ['age', 'role_id', 'name'], 'roles': ['id']}
-}
-"""
 
 def define_graph_flow(dicts):
     table_nodes = {}
@@ -139,21 +141,51 @@ def define_graph_flow(dicts):
         graph_flow.append(node)
 
         print()
-        expression = "π_"
-        for _i in range(len(dicts['Projections'])):
-            if(_i == len(dicts['Projections'])-1):
-                expression += f"{dicts['Projections'][_i]}"
-                break
 
-            expression += f"{dicts['Projections'][_i]}, "
+    expression = "π "
+    for _i in range(len(dicts['Projections'])):
+        tables = list(dicts['Projections'].keys())
+        for _j in range(len(dicts['Projections'][tables[_i]])):
+            values = dicts['Projections'][tables[_i]]
+            expression += f"{values[_j]}, "
 
-        expression += f"({dicts['Tables'][0]})"
+    expression = expression[0:len(expression)-2]
 
-        node = Node(f'passo {step}', expression, graph_flow[-1])
-        graph_flow.append(node)
+    node = Node(f'passo {step}', expression, graph_flow[-1])
+    graph_flow.append(node)
 
-        for node in graph_flow:
-            print(node.get_name(), node.get_expression(), list([n.get_name()] for n in node.connected_nodes))
+    for node in graph_flow:
+        print(node.get_name(), node.get_expression(), list([n.get_name()] for n in node.connected_nodes))
 
-            
+
+# Exemplo de uso
+sql_query = "SELECT name, age FROM users JOIN roles ON users.role_id = roles.id WHERE age > 25 AND name = 'John';"
+sql_query2 = """
+SELECT Cliente.nome, pedido.idPedido, pedido.DataPedido, pedido.ValorTotalPedido
+FROM Cliente JOIN pedido ON Cliente.idcliente = pedido.Cliente_idCliente
+WHERE Cliente.TipoCliente_idTipoCliente = 1 AND pedido.ValorTotalPedido = 0;
+"""
+sql_query3 = """
+Select Cliente.nome, pedido.idPedido, pedido.DataPedido, Status.descricao, pedido.ValorTotalPedido
+FROM Cliente JOIN pedido on Cliente.idcliente = pedido.Cliente_idCliente
+JOIN Status on Status.idstatus = Pedido.status_idstatus
+where Status.descricao = 'Aberto' AND Cliente.TipoCliente_idTipoCliente = 1 AND pedido.ValorTotalPedido = 0;
+"""
+
+"""
+{
+        'Tables': ['users', 'roles'], 
+        'Joins': [{'tables': ['users', 'roles'], 'on': 'users.role_id = roles.id'}], 
+        'Conditions': {'users': ['age > 25', "name = 'John';"], 'roles': []}, 
+        'Projections': ['name', 'age'], 
+        'Intermediary-Projections': {'users': ['age', 'role_id', 'name'], 'roles': ['id']}
+}
+"""
+
+
+result = analisar_sql(sql_query3)
+
+
+print()
+
 graph = define_graph_flow(result)

@@ -2,7 +2,10 @@ class Node():
     def __init__(self, name: str, expression: str, connected_to = None):
         self.name = name
         self.expression = expression
-        self.connected_nodes = [connected_to] if connected_to else []
+        self.connected_nodes = []
+        
+        if(connected_to):
+            self.connect_to(connected_to)
 
     def connect_to(self, node):
         if(node not in self.connected_nodes):
