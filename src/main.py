@@ -1,81 +1,243 @@
-from interpreter import Interpreter
 import re
+from node import Node, ExpressionTypes
 
-def read_file(file_path: str):
-    with open(file_path, 'r') as f:
-        return f.readlines() if f != None else None
-
-
-def parse_relational_algebra(expression):
-    # Dicionários para armazenar os componentes
-    tables = set()
-    joins = []
-    conditions = {}
-    projections = []
-
-    # Expressões regulares para identificar componentes
-    join_pattern = re.compile(r"(.+?) ⨝_(.+?) (.+?)\s*(\(.+?\))?")
-    condition_pattern = re.compile(r"σ_(.+?)\s*\((.+?)\)")
-    projection_pattern = re.compile(r"π_(.+?)\s*\((.+?)\)")
-
-    # Encontrar projeções
-    for match in re.finditer(projection_pattern, expression):
-        fields, from_expr = match.groups()
-        projections.append((fields.split(','), from_expr))
-        # Analisar a expressão 'from' para mais tabelas
-        from_tables = re.findall(r'\b\w+\b', from_expr)
-        tables.update(from_tables)
-
-    # Encontrar limitações
-    for match in re.finditer(condition_pattern, expression):
-        cond, from_expr = match.groups()
-        from_tables = re.findall(r'\b\w+\b', from_expr)
-        for table in from_tables:
-            if table not in conditions:
-                conditions[table] = []
-            conditions[table].append(cond)
-        tables.update(from_tables)
-
-    # Encontrar junções
-    for match in re.finditer(join_pattern, expression):
-        left_table, condition, right_table, _ = match.groups()
-        joins.append((left_table, condition, right_table))
-        tables.update([left_table, right_table])
-
-    # Remover as tabelas dos campos de projeção e condições para limpeza
-    return {
-        "tables": list(tables),
-        "joins": joins,
-        "conditions": conditions,
-        "projections": projections
+def analisar_sql(query):
+    # Dicionários para armazenar as partes da consulta
+    elementos = {
+        "Tables": [],
+        "Joins": [],
+        "Conditions": {},
+        "Projections": {},
+        "Intermediary-Projections": {}
     }
 
-# Carrega um arquivo SQL e cria uma instância do Interpreter
-file = read_file('../data/declaration.sql')
-interpreter = Interpreter(file)
+    # Regex para extrair as projeções (após SELECT e antes do FROM)
+    proj_regex = re.compile(r'SELECT\s+(.*?)\s+FROM', re.IGNORECASE)
+    match_proj = proj_regex.search(query)
+    if match_proj:
+        # Extrai projeções e as associa a tabelas específicas
+        projections = match_proj.group(1).split(',')
+        for proj in projections:
+            proj = proj.strip()
+            table_column = re.match(r'(\w+)\.(\w+)', proj)
+            if table_column:
+                table, column = table_column.groups()
+                if table not in elementos['Projections']:
+                    elementos['Projections'][table] = []
+                elementos['Projections'][table].append(column)
 
-# Gera a álgebra relacional a partir da consulta SQL
-sql_query = """
-SELECT name, age FROM users
-JOIN roles ON users.role_id = roles.id
-WHERE age > 25 AND name = 'John';
+    # Regex para extrair os nomes das tabelas principais e de junção
+    # Utiliza uma lista para manter a ordem de aparecimento
+    tables = []
+    # Regex para capturar nomes de tabelas na cláusula FROM e JOINs
+    table_regex = re.compile(r'FROM\s+(\w+)', re.IGNORECASE)
+    join_regex = re.compile(r'JOIN\s+(\w+)', re.IGNORECASE)
+    
+    # Captura a tabela principal
+    match_table = table_regex.search(query)
+    if match_table:
+        main_table = match_table.group(1)
+        if main_table not in tables:
+            tables.append(main_table)
+
+    # Captura todas as tabelas de junção
+    join_matches = join_regex.findall(query)
+    for join_table in join_matches:
+        if join_table not in tables:
+            tables.append(join_table)
+
+    elementos['Tables'] = tables
+    for table in tables:
+        elementos['Conditions'][table] = []
+        elementos['Intermediary-Projections'][table] = set()
+
+    # Regex para extrair detalhes de cada JOIN (JOIN, ON)
+    join_detail_regex = re.compile(r'JOIN\s+(\w+)\s+ON\s+(.*?)\s+(?=JOIN|WHERE|$)', re.IGNORECASE | re.DOTALL)
+    for join_match in join_detail_regex.finditer(query):
+        join_table = join_match.group(1)
+        join_condition = join_match.group(2).strip()
+        join_from = re.search(r'(\w+)\.', join_condition).group(1)
+        elementos['Joins'].append({"tables": [join_from, join_table], "on": join_condition})
+        # Adiciona projeções intermediárias baseadas nos joins
+        on_parts = re.findall(r'(\w+)\.(\w+)', join_condition)
+        for part in on_parts:
+            table, column = part
+            elementos['Intermediary-Projections'][table].add(column)
+
+    # Regex para extrair as condições (após WHERE até o fim da query)
+    cond_regex = re.compile(r'WHERE\s+(.*)', re.IGNORECASE)
+    match_cond = cond_regex.search(query)
+    if match_cond:
+        general_conditions = match_cond.group(1).split(' AND ')
+        for condition in general_conditions:
+            condition = condition.strip(';')
+            parts = re.findall(r'(\w+)\.(\w+)', condition)
+            for table, column in parts:
+                if table in tables:
+                    elementos['Conditions'][table].append(condition)
+                    elementos['Intermediary-Projections'][table].add(column)
+
+    # Convertendo sets para listas
+    for table in elementos['Intermediary-Projections']:
+        elementos['Intermediary-Projections'][table] = list(elementos['Intermediary-Projections'][table])
+
+    return elementos
+
+def define_graph_flow(dicts):
+    table_nodes = {}
+    temp_flow = []
+    step = 1
+    tables_flow = {}
+    graph_flow = []
+    join_nodes = []
+
+    for t in dicts['Tables']:
+        table_nodes[t] = [t]
+
+        for t_n, c in dicts['Conditions'].items():
+            if(t == t_n):
+                table_nodes[t].append(f"σ {c}")
+                # print(t_n, c)
+        for t_n, i_p in dicts['Intermediary-Projections'].items():
+            if(t == t_n):
+                table_nodes[t].append(f"π {i_p}")
+                print(table_nodes[t])
+                # print(t_n, c)
+
+    for k, v in table_nodes.items():
+        tables_flow[k] = []
+        for i in v:
+            node = Node(f'passo {step}', i)
+            if(node.expression[0] == 'σ'):
+                node.expression_type = ExpressionTypes.SELECT
+            elif(node.expression[0] == 'π'):
+                node.expression_type = ExpressionTypes.PROJECAO
+
+            step += 1
+            
+            if(len(temp_flow) > 0):
+                node.connect_to(temp_flow[-1])
+            
+            tables_flow[k].append(node)
+            temp_flow.append(node)
+            graph_flow.append(node)
+
+        
+        temp_flow = []
+
+    for join in dicts['Joins']:
+        tables = join['tables']
+        expr = join['on']
+
+        node = Node(f'passo {step}', expression=f"⨝ {expr}", expression_type=ExpressionTypes.JUNCAO)
+        step += 1
+        
+        join_tables = []
+
+        for t_in_node in table_nodes.keys():
+            if(t_in_node in tables):
+                join_tables.append(t_in_node)
+        
+        for joined_t in join_tables:
+            tables_flow[joined_t][-1].connect_to(node)
+            node.expression_type = ExpressionTypes.JUNCAO
+
+        join_nodes.append(node)
+        graph_flow.append(node)
+
+        print()
+
+    for k in range(1, len(join_nodes)):
+        join_nodes[k].connect_to(join_nodes[k-1])
+
+    expression = "π "
+    for _i in range(len(dicts['Projections'])):
+        tables = list(dicts['Projections'].keys())
+        for _j in range(len(dicts['Projections'][tables[_i]])):
+            values = dicts['Projections'][tables[_i]]
+            expression += f"{values[_j]}, "
+
+    expression = expression[0:len(expression)-2]
+
+    node = Node(f'passo {step}', expression, graph_flow[-1])
+    graph_flow.append(node)
+
+    # for node in graph_flow:
+    #     print(node.get_name(), node.get_expression(), list([n.get_name()] for n in node.connected_nodes))
+
+    return graph_flow, join_nodes, table_nodes
+
+def define_steps(graph_flow, join_nodes):
+    print()
+    print()
+    steps = []
+    join_index = 0
+    for node in graph_flow:
+        # print(node.get_name(), node.get_expression(), list([n.get_name()] for n in node.connected_nodes))
+
+        if(node.expression_type == ExpressionTypes.PROJECAO and join_index < len(join_nodes)):
+            steps.append(node)
+            steps.append(join_nodes[join_index])
+            join_index += 1
+            continue
+        
+        if(node.expression_type != ExpressionTypes.JUNCAO):
+            steps.append(node)
+
+    print()
+    print()
+    for i in range(len(steps)):
+        node = steps[i]
+        node.name = f'passo {(i+1)}'
+
+    for node in steps:
+        print(node.get_name(), node.get_expression(), list([n.get_name()] for n in node.connected_nodes))
+
+    return steps
+
+
+
+
+
+# Exemplo de uso
+sql_query0 = "SELECT name, age FROM users JOIN roles ON users.role_id = roles.id WHERE age > 25 AND name = 'John';"
+sql_query1 = """
+SELECT Cliente.nome, pedido.idPedido, pedido.DataPedido, pedido.ValorTotalPedido
+FROM Cliente JOIN pedido ON Cliente.idcliente = pedido.Cliente_idCliente
+WHERE Cliente.TipoCliente_idTipoCliente = 1 AND pedido.ValorTotalPedido = 0;
+"""
+sql_query2 = """
+Select Cliente.nome, pedido.idPedido, pedido.DataPedido, Status.descricao, pedido.ValorTotalPedido
+FROM Cliente JOIN pedido on Cliente.idcliente = pedido.Cliente_idCliente
+JOIN Status on Status.idstatus = pedido.status_idstatus
+where Status.descricao = 'Aberto' AND Cliente.TipoCliente_idTipoCliente = 1 AND pedido.ValorTotalPedido = 0;
+"""
+sql_query3 = """
+Select cliente.nome, pedido.idPedido, pedido.DataPedido, Status.descricao, pedido.ValorTotalPedido, produto.QuantEstoque
+from cliente Join pedido ON cliente.idcliente = pedido.Cliente_idCliente
+Join Status ON Status.idstatus = pedido.status_idstatus
+Join pedido_has_produto ON pedido_has_produto.pedido_idPedido = pedido.idPedido
+Join produto ON produto.idProduto = pedido_has_produto.produto_idProduto
+where Status.descricao = 'Aberto' AND cliente.TipoCliente_idTipoCliente = 1 AND pedido.ValorTotalPedido = 0 AND produto.QuantEstoque > 0;
+"""
+
+"""
+{
+        'Tables': ['users', 'roles'], 
+        'Joins': [{'tables': ['users', 'roles'], 'on': 'users.role_id = roles.id'}], 
+        'Conditions': {'users': ['age > 25', "name = 'John';"], 'roles': []}, 
+        'Projections': ['name', 'age'], 
+        'Intermediary-Projections': {'users': ['age', 'role_id', 'name'], 'roles': ['id']}
+}
 """
 
 
-algebra = interpreter.sql_to_algebra(sql_query)
-print("Algebra Relacional Original:", algebra)
+result = analisar_sql(sql_query2)
+for k, v in result.items():
+    print(k, v)
+
 
 print()
-algebra = "π_name,age(σ_age > 25 AND name = 'John'(users ⨝_users.role_id = roles.id roles))"
-print("Alg2", algebra)
-print()
 
-dict = parse_relational_algebra(algebra)
-
-for d in dict:
-    print(d, dict[d])
-
-"π_Nome,Age((π_Nome, Age, Role-ID(σ_age > 25, Nome='John'(users)))⨝_users.role_id = roles.id (π_ID(roles)))"
-# print("Alg2", f"{algebra_users.role-id} = {roles.id(Pi_id(roles)))}")
-
-# Outras operações conforme necessário
+graph, joins, ts,  = define_graph_flow(result)
+steps = define_steps(graph, joins) #Array com os passos do grafo
