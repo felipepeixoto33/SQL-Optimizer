@@ -26,36 +26,38 @@ def analisar_sql(query):
                     elementos['Projections'][table] = []
                 elementos['Projections'][table].append(column)
 
-    # Regex para extrair os nomes das tabelas principais e de junção
+    # Captura todas as tabelas mencionadas
+    tables = set()
     table_regex = re.compile(r'FROM\s+(\w+)', re.IGNORECASE)
     join_regex = re.compile(r'JOIN\s+(\w+)', re.IGNORECASE)
-    
+
     # Captura a tabela principal
     match_table = table_regex.search(query)
-    main_table = ''
     if match_table:
         main_table = match_table.group(1)
-        elementos['Tables'].append(main_table)
-        elementos['Conditions'][main_table] = []
-        elementos['Intermediary-Projections'][main_table] = set()
-        if main_table not in elementos['Projections']:
-            elementos['Projections'][main_table] = []
+        tables.add(main_table)
 
-    # Regex para extrair as informações de JOIN (JOIN, ON)
-    join_detail_regex = re.compile(r'JOIN\s+(\w+)\s+ON\s+(.*?)\s+(WHERE|JOIN|$)', re.IGNORECASE)
+    # Captura todas as tabelas de junção
+    join_matches = join_regex.findall(query)
+    tables.update(join_matches)
+
+    elementos['Tables'] = list(tables)
+    for table in tables:
+        elementos['Conditions'][table] = []
+        elementos['Intermediary-Projections'][table] = set()
+
+    # Regex para extrair detalhes de cada JOIN (JOIN, ON)
+    join_detail_regex = re.compile(r'JOIN\s+(\w+)\s+ON\s+(.*?)\s+(?=JOIN|WHERE|$)', re.IGNORECASE | re.DOTALL)
     for join_match in join_detail_regex.finditer(query):
         join_table = join_match.group(1)
         join_condition = join_match.group(2).strip()
-        elementos['Tables'].append(join_table)
-        if join_table not in elementos['Conditions']:
-            elementos['Conditions'][join_table] = []
-        elementos['Joins'].append({"tables": [main_table, join_table], "on": join_condition})
+        # Identifica a tabela de onde a junção parte
+        join_from = re.search(r'(\w+)\.', join_condition).group(1)
+        elementos['Joins'].append({"tables": [join_from, join_table], "on": join_condition})
         # Adiciona projeções intermediárias baseadas nos joins
         on_parts = re.findall(r'(\w+)\.(\w+)', join_condition)
         for part in on_parts:
             table, column = part
-            if table not in elementos['Intermediary-Projections']:
-                elementos['Intermediary-Projections'][table] = set()
             elementos['Intermediary-Projections'][table].add(column)
 
     # Regex para extrair as condições (após WHERE até o fim da query)
@@ -66,18 +68,14 @@ def analisar_sql(query):
         for condition in general_conditions:
             condition = condition.strip(';')
             parts = re.findall(r'(\w+)\.(\w+)', condition)
-            if parts:
-                for table, column in parts:
-                    if table in elementos['Tables']:
-                        elementos['Conditions'][table].append(condition)
-                        elementos['Intermediary-Projections'][table].add(column)
+            for table, column in parts:
+                if table in tables:
+                    elementos['Conditions'][table].append(condition)
+                    elementos['Intermediary-Projections'][table].add(column)
 
     # Convertendo sets para listas
     for table in elementos['Intermediary-Projections']:
         elementos['Intermediary-Projections'][table] = list(elementos['Intermediary-Projections'][table])
-
-    for k, v in elementos.items():
-        print(k, v)
 
     print()
     for table in elementos['Projections']:
@@ -95,6 +93,7 @@ def define_graph_flow(dicts):
     step = 1
     tables_flow = {}
     graph_flow = []
+    join_nodes = []
 
     for t in dicts['Tables']:
         table_nodes[t] = [t]
@@ -126,7 +125,7 @@ def define_graph_flow(dicts):
         tables = join['tables']
         expr = join['on']
 
-        node = Node(f'passo {step}', expression=expr)
+        node = Node(f'passo {step}', expression=f"⨝ {expr}")
         step += 1
         
         join_tables = []
@@ -138,9 +137,13 @@ def define_graph_flow(dicts):
         for joined_t in join_tables:
             tables_flow[joined_t][-1].connect_to(node)
 
+        join_nodes.append(node)
         graph_flow.append(node)
 
         print()
+
+    for k in range(1, len(join_nodes)):
+        join_nodes[k].connect_to(join_nodes[k-1])
 
     expression = "π "
     for _i in range(len(dicts['Projections'])):
@@ -159,17 +162,25 @@ def define_graph_flow(dicts):
 
 
 # Exemplo de uso
-sql_query = "SELECT name, age FROM users JOIN roles ON users.role_id = roles.id WHERE age > 25 AND name = 'John';"
-sql_query2 = """
+sql_query0 = "SELECT name, age FROM users JOIN roles ON users.role_id = roles.id WHERE age > 25 AND name = 'John';"
+sql_query1 = """
 SELECT Cliente.nome, pedido.idPedido, pedido.DataPedido, pedido.ValorTotalPedido
 FROM Cliente JOIN pedido ON Cliente.idcliente = pedido.Cliente_idCliente
 WHERE Cliente.TipoCliente_idTipoCliente = 1 AND pedido.ValorTotalPedido = 0;
 """
-sql_query3 = """
+sql_query2 = """
 Select Cliente.nome, pedido.idPedido, pedido.DataPedido, Status.descricao, pedido.ValorTotalPedido
 FROM Cliente JOIN pedido on Cliente.idcliente = pedido.Cliente_idCliente
-JOIN Status on Status.idstatus = Pedido.status_idstatus
+JOIN Status on Status.idstatus = pedido.status_idstatus
 where Status.descricao = 'Aberto' AND Cliente.TipoCliente_idTipoCliente = 1 AND pedido.ValorTotalPedido = 0;
+"""
+sql_query3 = """
+Select cliente.nome, pedido.idPedido, pedido.DataPedido, Status.descricao, pedido.ValorTotalPedido, produto.QuantEstoque
+from cliente Join pedido ON cliente.idcliente = pedido.Cliente_idCliente
+Join Status ON Status.idstatus = pedido.status_idstatus
+Join pedido_has_produto ON pedido.idPedido = pedido_has_produto.pedido_idPedido
+Join produto ON produto.idProduto = pedido_has_produto.produto_idProduto
+where Status.descricao = 'Aberto' AND cliente.TipoCliente_idTipoCliente = 1 AND pedido.ValorTotalPedido = 0 AND produto.QuantEstoque > 0;
 """
 
 """
@@ -184,6 +195,8 @@ where Status.descricao = 'Aberto' AND Cliente.TipoCliente_idTipoCliente = 1 AND 
 
 
 result = analisar_sql(sql_query3)
+for k, v in result.items():
+    print(k, v)
 
 
 print()
