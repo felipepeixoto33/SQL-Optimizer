@@ -1,5 +1,5 @@
 import re
-from node import Node
+from node import Node, ExpressionTypes
 
 def analisar_sql(query):
     # Dicionários para armazenar as partes da consulta
@@ -105,12 +105,18 @@ def define_graph_flow(dicts):
         for t_n, i_p in dicts['Intermediary-Projections'].items():
             if(t == t_n):
                 table_nodes[t].append(f"π {i_p}")
+                print(table_nodes[t])
                 # print(t_n, c)
 
     for k, v in table_nodes.items():
         tables_flow[k] = []
         for i in v:
             node = Node(f'passo {step}', i)
+            if(node.expression[0] == 'σ'):
+                node.expression_type = ExpressionTypes.SELECT
+            elif(node.expression[0] == 'π'):
+                node.expression_type = ExpressionTypes.PROJECAO
+
             step += 1
             
             if(len(temp_flow) > 0):
@@ -119,13 +125,15 @@ def define_graph_flow(dicts):
             tables_flow[k].append(node)
             temp_flow.append(node)
             graph_flow.append(node)
+
+        
         temp_flow = []
 
     for join in dicts['Joins']:
         tables = join['tables']
         expr = join['on']
 
-        node = Node(f'passo {step}', expression=f"⨝ {expr}")
+        node = Node(f'passo {step}', expression=f"⨝ {expr}", expression_type=ExpressionTypes.JUNCAO)
         step += 1
         
         join_tables = []
@@ -136,6 +144,7 @@ def define_graph_flow(dicts):
         
         for joined_t in join_tables:
             tables_flow[joined_t][-1].connect_to(node)
+            node.expression_type = ExpressionTypes.JUNCAO
 
         join_nodes.append(node)
         graph_flow.append(node)
@@ -157,8 +166,41 @@ def define_graph_flow(dicts):
     node = Node(f'passo {step}', expression, graph_flow[-1])
     graph_flow.append(node)
 
+    # for node in graph_flow:
+    #     print(node.get_name(), node.get_expression(), list([n.get_name()] for n in node.connected_nodes))
+
+    return graph_flow, join_nodes, table_nodes
+
+def define_steps(graph_flow, join_nodes):
+    print()
+    print()
+    steps = []
+    join_index = 0
     for node in graph_flow:
+        # print(node.get_name(), node.get_expression(), list([n.get_name()] for n in node.connected_nodes))
+
+        if(node.expression_type == ExpressionTypes.PROJECAO and join_index < len(join_nodes)):
+            steps.append(node)
+            steps.append(join_nodes[join_index])
+            join_index += 1
+            continue
+        
+        if(node.expression_type != ExpressionTypes.JUNCAO):
+            steps.append(node)
+
+    print()
+    print()
+    for i in range(len(steps)):
+        node = steps[i]
+        node.name = f'passo {(i+1)}'
+
+    for node in steps:
         print(node.get_name(), node.get_expression(), list([n.get_name()] for n in node.connected_nodes))
+
+    return steps
+
+
+
 
 
 # Exemplo de uso
@@ -178,7 +220,7 @@ sql_query3 = """
 Select cliente.nome, pedido.idPedido, pedido.DataPedido, Status.descricao, pedido.ValorTotalPedido, produto.QuantEstoque
 from cliente Join pedido ON cliente.idcliente = pedido.Cliente_idCliente
 Join Status ON Status.idstatus = pedido.status_idstatus
-Join pedido_has_produto ON pedido.idPedido = pedido_has_produto.pedido_idPedido
+Join pedido_has_produto ON pedido_has_produto.pedido_idPedido = pedido.idPedido
 Join produto ON produto.idProduto = pedido_has_produto.produto_idProduto
 where Status.descricao = 'Aberto' AND cliente.TipoCliente_idTipoCliente = 1 AND pedido.ValorTotalPedido = 0 AND produto.QuantEstoque > 0;
 """
@@ -194,11 +236,12 @@ where Status.descricao = 'Aberto' AND cliente.TipoCliente_idTipoCliente = 1 AND 
 """
 
 
-result = analisar_sql(sql_query3)
+result = analisar_sql(sql_query2)
 for k, v in result.items():
     print(k, v)
 
 
 print()
 
-graph = define_graph_flow(result)
+graph, joins, ts,  = define_graph_flow(result)
+steps = define_steps(graph, joins)

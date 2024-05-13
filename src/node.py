@@ -1,7 +1,16 @@
+from enum import Enum
+
+class ExpressionTypes(Enum):
+    JUNCAO = 1
+    PROJECAO = 2
+    SELECT = 3
+    TABELA = 4
+
 class Node():
-    def __init__(self, name: str, expression: str, connected_to = None):
+    def __init__(self, name: str, expression: str, connected_to = None, expression_type = None):
         self.name = name
         self.expression = expression
+        self.expression_type = expression_type
         self.connected_nodes = []
         
         if(connected_to):
