@@ -26,22 +26,27 @@ def analisar_sql(query):
                     elementos['Projections'][table] = []
                 elementos['Projections'][table].append(column)
 
-    # Captura todas as tabelas mencionadas
-    tables = set()
+    # Regex para extrair os nomes das tabelas principais e de junção
+    # Utiliza uma lista para manter a ordem de aparecimento
+    tables = []
+    # Regex para capturar nomes de tabelas na cláusula FROM e JOINs
     table_regex = re.compile(r'FROM\s+(\w+)', re.IGNORECASE)
     join_regex = re.compile(r'JOIN\s+(\w+)', re.IGNORECASE)
-
+    
     # Captura a tabela principal
     match_table = table_regex.search(query)
     if match_table:
         main_table = match_table.group(1)
-        tables.add(main_table)
+        if main_table not in tables:
+            tables.append(main_table)
 
     # Captura todas as tabelas de junção
     join_matches = join_regex.findall(query)
-    tables.update(join_matches)
+    for join_table in join_matches:
+        if join_table not in tables:
+            tables.append(join_table)
 
-    elementos['Tables'] = list(tables)
+    elementos['Tables'] = tables
     for table in tables:
         elementos['Conditions'][table] = []
         elementos['Intermediary-Projections'][table] = set()
@@ -51,7 +56,6 @@ def analisar_sql(query):
     for join_match in join_detail_regex.finditer(query):
         join_table = join_match.group(1)
         join_condition = join_match.group(2).strip()
-        # Identifica a tabela de onde a junção parte
         join_from = re.search(r'(\w+)\.', join_condition).group(1)
         elementos['Joins'].append({"tables": [join_from, join_table], "on": join_condition})
         # Adiciona projeções intermediárias baseadas nos joins
@@ -76,14 +80,6 @@ def analisar_sql(query):
     # Convertendo sets para listas
     for table in elementos['Intermediary-Projections']:
         elementos['Intermediary-Projections'][table] = list(elementos['Intermediary-Projections'][table])
-
-    print()
-    for table in elementos['Projections']:
-        for e in elementos['Projections'][table]:
-            table_int_projs = elementos['Intermediary-Projections'][table]
-            if(e not in table_int_projs):
-                table_int_projs.append(e)
-                
 
     return elementos
 
