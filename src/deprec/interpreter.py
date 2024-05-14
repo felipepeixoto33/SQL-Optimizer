@@ -3,7 +3,7 @@ from enum import Enum
 
 class Interpreter:
     def __init__(self, sql) -> None:
-        self.sql = sql.splitlines(True)
+        self.sql = sql
         self.raw_sql = self.sql_to_string()
         self.common_operators = ['CREATE', 'IF', 'INT', 'NOT', 'NULL', 'EXISTS']
         # Colocar todos os operadores do SQL nesse array acima.

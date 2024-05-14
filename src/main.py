@@ -3,6 +3,7 @@ from node import Node, ExpressionTypes
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
 import plot
+from interpreter import Interpreter
 
 def analisar_sql(query):
     elementos = {
@@ -73,6 +74,12 @@ def analisar_sql(query):
     return elementos
 
 def define_graph_flow(dicts):
+    print("DICTS:")
+    for k,v in dicts.items():
+        print(k, v)
+    print()
+    print()
+
     table_nodes = {}
     temp_flow = []
     step = 1
@@ -161,7 +168,14 @@ def visualize_graph(graph):
 
 def process_sql_query():
     sql_query = txt_input.get("1.0", tk.END).strip()
+
     if sql_query:
+        interpreter = Interpreter(sql_query)
+        is_sql_valid = interpreter.validade_syntax()
+        algebra = interpreter.sql_to_algebra(sql_query)
+        print("SQL valido: ", is_sql_valid)
+        print("SQL as Algebra", algebra)
+
         result = analisar_sql(sql_query)
         graph, joins, ts = define_graph_flow(result)
         steps = define_steps(graph, joins)

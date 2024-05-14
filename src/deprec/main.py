@@ -52,6 +52,7 @@ def parse_relational_algebra(expression):
 
 # Carrega um arquivo SQL e cria uma instância do Interpreter
 file = read_file('../data/declaration.sql')
+print(file)
 interpreter = Interpreter(file)
 
 # Gera a álgebra relacional a partir da consulta SQL
@@ -63,11 +64,8 @@ WHERE age > 25 AND name = 'John';
 
 
 algebra = interpreter.sql_to_algebra(sql_query)
-print("Algebra Relacional Original:", algebra)
+print("Algebra Relacional:", algebra)
 
-print()
-algebra = "π_name,age(σ_age > 25 AND name = 'John'(users ⨝_users.role_id = roles.id roles))"
-print("Alg2", algebra)
 print()
 
 dict = parse_relational_algebra(algebra)
