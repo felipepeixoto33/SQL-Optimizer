@@ -1,8 +1,10 @@
 import re
 from node import Node, ExpressionTypes
+import tkinter as tk
+from tkinter import scrolledtext, messagebox
+import plot
 
 def analisar_sql(query):
-    # Dicionários para armazenar as partes da consulta
     elementos = {
         "Tables": [],
         "Joins": [],
@@ -11,11 +13,9 @@ def analisar_sql(query):
         "Intermediary-Projections": {}
     }
 
-    # Regex para extrair as projeções (após SELECT e antes do FROM)
     proj_regex = re.compile(r'SELECT\s+(.*?)\s+FROM', re.IGNORECASE)
     match_proj = proj_regex.search(query)
     if match_proj:
-        # Extrai projeções e as associa a tabelas específicas
         projections = match_proj.group(1).split(',')
         for proj in projections:
             proj = proj.strip()
@@ -26,21 +26,14 @@ def analisar_sql(query):
                     elementos['Projections'][table] = []
                 elementos['Projections'][table].append(column)
 
-    # Regex para extrair os nomes das tabelas principais e de junção
-    # Utiliza uma lista para manter a ordem de aparecimento
     tables = []
-    # Regex para capturar nomes de tabelas na cláusula FROM e JOINs
     table_regex = re.compile(r'FROM\s+(\w+)', re.IGNORECASE)
     join_regex = re.compile(r'JOIN\s+(\w+)', re.IGNORECASE)
-    
-    # Captura a tabela principal
     match_table = table_regex.search(query)
     if match_table:
         main_table = match_table.group(1)
         if main_table not in tables:
             tables.append(main_table)
-
-    # Captura todas as tabelas de junção
     join_matches = join_regex.findall(query)
     for join_table in join_matches:
         if join_table not in tables:
@@ -51,20 +44,17 @@ def analisar_sql(query):
         elementos['Conditions'][table] = []
         elementos['Intermediary-Projections'][table] = set()
 
-    # Regex para extrair detalhes de cada JOIN (JOIN, ON)
     join_detail_regex = re.compile(r'JOIN\s+(\w+)\s+ON\s+(.*?)\s+(?=JOIN|WHERE|$)', re.IGNORECASE | re.DOTALL)
     for join_match in join_detail_regex.finditer(query):
         join_table = join_match.group(1)
         join_condition = join_match.group(2).strip()
         join_from = re.search(r'(\w+)\.', join_condition).group(1)
         elementos['Joins'].append({"tables": [join_from, join_table], "on": join_condition})
-        # Adiciona projeções intermediárias baseadas nos joins
         on_parts = re.findall(r'(\w+)\.(\w+)', join_condition)
         for part in on_parts:
             table, column = part
             elementos['Intermediary-Projections'][table].add(column)
 
-    # Regex para extrair as condições (após WHERE até o fim da query)
     cond_regex = re.compile(r'WHERE\s+(.*)', re.IGNORECASE)
     match_cond = cond_regex.search(query)
     if match_cond:
@@ -77,7 +67,6 @@ def analisar_sql(query):
                     elementos['Conditions'][table].append(condition)
                     elementos['Intermediary-Projections'][table].add(column)
 
-    # Convertendo sets para listas
     for table in elementos['Intermediary-Projections']:
         elementos['Intermediary-Projections'][table] = list(elementos['Intermediary-Projections'][table])
 
@@ -97,12 +86,9 @@ def define_graph_flow(dicts):
         for t_n, c in dicts['Conditions'].items():
             if(t == t_n):
                 table_nodes[t].append(f"σ {c}")
-                # print(t_n, c)
         for t_n, i_p in dicts['Intermediary-Projections'].items():
             if(t == t_n):
                 table_nodes[t].append(f"π {i_p}")
-                print(table_nodes[t])
-                # print(t_n, c)
 
     for k, v in table_nodes.items():
         tables_flow[k] = []
@@ -112,40 +98,28 @@ def define_graph_flow(dicts):
                 node.expression_type = ExpressionTypes.SELECT
             elif(node.expression[0] == 'π'):
                 node.expression_type = ExpressionTypes.PROJECAO
-
             step += 1
-            
             if(len(temp_flow) > 0):
                 node.connect_to(temp_flow[-1])
-            
             tables_flow[k].append(node)
             temp_flow.append(node)
             graph_flow.append(node)
-
-        
         temp_flow = []
 
     for join in dicts['Joins']:
         tables = join['tables']
         expr = join['on']
-
         node = Node(f'passo {step}', expression=f"⨝ {expr}", expression_type=ExpressionTypes.JUNCAO)
         step += 1
-        
         join_tables = []
-
         for t_in_node in table_nodes.keys():
             if(t_in_node in tables):
                 join_tables.append(t_in_node)
-        
         for joined_t in join_tables:
             tables_flow[joined_t][-1].connect_to(node)
             node.expression_type = ExpressionTypes.JUNCAO
-
         join_nodes.append(node)
         graph_flow.append(node)
-
-        print()
 
     for k in range(1, len(join_nodes)):
         join_nodes[k].connect_to(join_nodes[k-1])
@@ -156,88 +130,59 @@ def define_graph_flow(dicts):
         for _j in range(len(dicts['Projections'][tables[_i]])):
             values = dicts['Projections'][tables[_i]]
             expression += f"{values[_j]}, "
-
-    expression = expression[0:len(expression)-2]
-
+    expression = expression[:-2]
     node = Node(f'passo {step}', expression, graph_flow[-1])
     graph_flow.append(node)
-
-    # for node in graph_flow:
-    #     print(node.get_name(), node.get_expression(), list([n.get_name()] for n in node.connected_nodes))
 
     return graph_flow, join_nodes, table_nodes
 
 def define_steps(graph_flow, join_nodes):
-    print()
-    print()
     steps = []
     join_index = 0
     for node in graph_flow:
-        # print(node.get_name(), node.get_expression(), list([n.get_name()] for n in node.connected_nodes))
-
         if(node.expression_type == ExpressionTypes.PROJECAO and join_index < len(join_nodes)):
             steps.append(node)
             steps.append(join_nodes[join_index])
             join_index += 1
             continue
-        
         if(node.expression_type != ExpressionTypes.JUNCAO):
             steps.append(node)
-
-    print()
-    print()
     for i in range(len(steps)):
         node = steps[i]
         node.name = f'passo {(i+1)}'
-
-    for node in steps:
-        print(node.get_name(), node.get_expression(), list([n.get_name()] for n in node.connected_nodes))
-
     return steps
 
+def visualize_graph(graph):
+    graph_str = ""
+    for node in graph:
+        connections = ', '.join([n.name for n in node.connected_nodes])
+        graph_str += f"{node.name}: {node.expression} -> [{connections}]\n"
+    return graph_str
+
+def process_sql_query():
+    sql_query = txt_input.get("1.0", tk.END).strip()
+    if sql_query:
+        result = analisar_sql(sql_query)
+        graph, joins, ts = define_graph_flow(result)
+        steps = define_steps(graph, joins)
+
+        G = plot.create_graph_from_nodes(steps)  # Substitua 'nodes' pela sua lista de objetos Node
+        plot.draw_graph(G)
+
+        graph_text_area.delete('1.0', tk.END)
+        graph_text_area.insert('1.0', visualize_graph(graph))
+    else:
+        messagebox.showinfo("Information", "Please enter a SQL query before processing.")
+
+root = tk.Tk()
+root.geometry("600x600")
+root.title("SQL Query Processor")
+txt_input = scrolledtext.ScrolledText(root, wrap=tk.WORD, height=10, width=50)
+txt_input.pack(pady=10)
+graph_text_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, height=10, width=50)
+graph_text_area.pack(pady=10)
+process_button = tk.Button(root, text="Process SQL Query", command=process_sql_query)
+process_button.pack(pady=20)
+root.mainloop()
 
 
-
-
-# Exemplo de uso
-sql_query0 = "SELECT name, age FROM users JOIN roles ON users.role_id = roles.id WHERE age > 25 AND name = 'John';"
-sql_query1 = """
-SELECT Cliente.nome, pedido.idPedido, pedido.DataPedido, pedido.ValorTotalPedido
-FROM Cliente JOIN pedido ON Cliente.idcliente = pedido.Cliente_idCliente
-WHERE Cliente.TipoCliente_idTipoCliente = 1 AND pedido.ValorTotalPedido = 0;
-"""
-sql_query2 = """
-Select Cliente.nome, pedido.idPedido, pedido.DataPedido, Status.descricao, pedido.ValorTotalPedido
-FROM Cliente JOIN pedido on Cliente.idcliente = pedido.Cliente_idCliente
-JOIN Status on Status.idstatus = pedido.status_idstatus
-where Status.descricao = 'Aberto' AND Cliente.TipoCliente_idTipoCliente = 1 AND pedido.ValorTotalPedido = 0;
-"""
-sql_query3 = """
-Select cliente.nome, pedido.idPedido, pedido.DataPedido, Status.descricao, pedido.ValorTotalPedido, produto.QuantEstoque
-from cliente Join pedido ON cliente.idcliente = pedido.Cliente_idCliente
-Join Status ON Status.idstatus = pedido.status_idstatus
-Join pedido_has_produto ON pedido_has_produto.pedido_idPedido = pedido.idPedido
-Join produto ON produto.idProduto = pedido_has_produto.produto_idProduto
-where Status.descricao = 'Aberto' AND cliente.TipoCliente_idTipoCliente = 1 AND pedido.ValorTotalPedido = 0 AND produto.QuantEstoque > 0;
-"""
-
-"""
-{
-        'Tables': ['users', 'roles'], 
-        'Joins': [{'tables': ['users', 'roles'], 'on': 'users.role_id = roles.id'}], 
-        'Conditions': {'users': ['age > 25', "name = 'John';"], 'roles': []}, 
-        'Projections': ['name', 'age'], 
-        'Intermediary-Projections': {'users': ['age', 'role_id', 'name'], 'roles': ['id']}
-}
-"""
-
-
-result = analisar_sql(sql_query2)
-for k, v in result.items():
-    print(k, v)
-
-
-print()
-
-graph, joins, ts,  = define_graph_flow(result)
-steps = define_steps(graph, joins) #Array com os passos do grafo
