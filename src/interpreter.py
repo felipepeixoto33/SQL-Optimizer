@@ -98,47 +98,10 @@ class Interpreter:
 
     def attribute_parameters(self):
         pass
-    
-    def validade_syntax(self):
-        # Dicionário para armazenar as partes do SQL
-        components = {
-            'SELECT': None,
-            'FROM': None,
-            'JOIN': [],
-            'WHERE': None
-        }
-
-        # Função auxiliar para extrair com segurança usando regex
-        def safe_search(pattern, text):
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                return match.group(1)
-            return False
-
-        # Extrair SELECT
-        components['SELECT'] = safe_search(r'SELECT\s+([\w\s\*,]+)\s+', self.raw_sql)
-        if not components['SELECT']:
-            return False, "Error parsing SELECT"
-
-        # Extrair FROM
-        components['FROM'] = safe_search(r'FROM\s+([\w\s]+?)(?:\s+WHERE|\s+JOIN|;|$)', self.raw_sql)
-        if not components['FROM']:
-            return False, "Error parsing FROM"
-
-        # Extrair WHERE, se existir
-        components['WHERE'] = safe_search(r'WHERE\s+(.*?)(?:\s+JOIN|;|$)', self.raw_sql)
-
-        # Extrair JOINs
-        joins = re.finditer(r'JOIN\s+([\w\s]+)\s+ON\s+([\w\s\.\=\>\<\!\(\)]+)', self.raw_sql, re.IGNORECASE)
-        for join in joins:
-            components['JOIN'].append((join.group(1).strip(), join.group(2).strip()))
-
-        # Retorna true e os componentes se tudo estiver correto
-        return True, components
 
 
     def validate_expression(self):
-        return self.check_parenthesis() and self.validade_syntax()
+        return self.check_parenthesis()
     
     def sql_to_string(self):
         str = ""
@@ -146,37 +109,49 @@ class Interpreter:
             str += line
         return str
 
-    def sql_to_algebra(self, sql_query):
-        # Extração dos componentes principais da consulta SQL
-        select_match = re.search(r'SELECT\s+([\w\s\*,]+)\s+FROM', sql_query, re.IGNORECASE)
-        from_match = re.search(r'FROM\s+(\w+)', sql_query, re.IGNORECASE)
-        where_match = re.search(r'WHERE\s+([^;]+)', sql_query, re.IGNORECASE)
-        join_match = re.search(r'JOIN\s+(\w+)\s+ON\s+([\w\.]+)\s*=\s*([\w\.]+)', sql_query, re.IGNORECASE)
+    def sql_to_algebra(self, sql):
+        # Remover quebras de linha e espaços extras
+        sql = ' '.join(sql.split())
+        
+        # Encontrar a cláusula SELECT
+        select_clause = re.search(r"SELECT\s+(.*?)\s+FROM", sql, re.IGNORECASE)
+        projections = select_clause.group(1) if select_clause else ""
+        
+        # Encontrar as tabelas e junções
+        from_clause = re.search(r"FROM\s+(.*?)(?:WHERE|;|$)", sql, re.IGNORECASE)
+        tables = from_clause.group(1) if from_clause else ""
+        
+        # Converter JOINs
+        join_conditions = re.findall(r"JOIN\s+(\w+)\s+ON\s+(\w+\.\w+\s*=\s*\w+\.\w+)", sql, re.IGNORECASE)
+        for table, condition in join_conditions:
+            tables = f"({tables} ⨝_{condition} {table})"
+        
+        # Encontrar a cláusula WHERE
+        where_clause = re.search(r"WHERE\s+(.*?);", sql, re.IGNORECASE)
+        selection = where_clause.group(1) if where_clause else ""
+        
+        # Montar a expressão de álgebra relacional
+        relational_algebra = f"π_{projections} (σ_{selection} ({tables}))"
+        
+        return relational_algebra
 
-        # Montagem da álgebra relacional
-        if select_match and from_match:
-            projection_fields = select_match.group(1).replace(' ', '')
-            from_table = from_match.group(1)
-            relational_algebra = f'π_{projection_fields} ('
+    def check_sql_syntax(self, sql):
+        # Verificar a cláusula SELECT
+        select_pattern = r"SELECT\s+[\w\.,\s]+\s+FROM\s+[\w\s]+"
+        if not re.search(select_pattern, sql, re.IGNORECASE):
+            return "Erro de sintaxe na cláusula SELECT ou FROM."
 
-            if where_match:
-                conditions = where_match.group(1)
-                relational_algebra += f'σ_{conditions} ('
+        # Verificar a cláusula JOIN com ON
+        join_pattern = r"JOIN\s+\w+\s+ON\s+[\w\.]+\s*=\s*[\w\.]+"
+        joins = re.findall(join_pattern, sql, re.IGNORECASE)
+        if "JOIN" in sql.upper() and not joins:
+            return "Erro de sintaxe na(s) cláusula(s) JOIN/ON."
 
-            if join_match:
-                join_table = join_match.group(1)
-                join_condition = f"{join_match.group(2)} = {join_match.group(3)}"
-                relational_algebra += f'{from_table} ⨝_{join_condition} {join_table}'
-            else:
-                relational_algebra += from_table
+        # Verificar a cláusula WHERE
+        where_pattern = r"WHERE\s+[\w\.\s'=\d]+(?:\s+AND\s+[\w\.\s'=\d]+)*;"
+        if "WHERE" in sql.upper() and not re.search(where_pattern, sql, re.IGNORECASE):
+            return "Erro de sintaxe na cláusula WHERE."
 
-            relational_algebra += ')'
-            if where_match:
-                relational_algebra += ')'
+        # Verificações adicionais podem ser incluídas aqui, como subconsultas, grupos, etc.
 
-            return relational_algebra
-
-        return "Query structure not recognized"
-
-    def optimize_algebra(self, sql_as_algebra):
-        pass
+        return "Sintaxe SQL parece correta."

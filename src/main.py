@@ -171,11 +171,14 @@ def process_sql_query():
 
     if sql_query:
         interpreter = Interpreter(sql_query)
-        is_sql_valid = interpreter.validade_syntax()
+        is_sql_valid = interpreter.check_sql_syntax(sql_query)
         algebra = interpreter.sql_to_algebra(sql_query)
-        print("SQL valido: ", is_sql_valid)
-        print("SQL as Algebra", algebra)
 
+        print("SQL valido: ", is_sql_valid)
+        print()
+        print("SQL as Algebra", algebra)
+        print()
+        
         result = analisar_sql(sql_query)
         graph, joins, ts = define_graph_flow(result)
         steps = define_steps(graph, joins)
